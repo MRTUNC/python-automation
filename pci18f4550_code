@@ -1,0 +1,915 @@
+// bu kodlar 19 05  2020 ...
+// no protect e dikkaaaaaaaaaaaaaaaaaaaat
+//#priority INT_RDA
+#include <18F4550.h>
+#fuses HS,PROTECT,NOWDT,NOPUT,NODEBUG,NOBROWNOUT,NOLVP,NOCPD,NOWRT,NODEBUG
+#use delay(clock=20000000)
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+
+#include <internal_eeprom.c>
+
+#include <ds18b20.c>  //ds18b20 sıcaklık sensoru 
+#use fast_io(b)
+#use fast_io(a)
+#use fast_io(c)
+#use fast_io(d)
+#use rs232 (baud=9600, xmit=pin_C6, rcv=pin_C7,parity=N,stop=1,ERRORS)
+char gelen[80];
+int8 data[80];
+int8 j=0;
+
+int8  amk;
+int8 d;
+
+
+unsigned int16  timersay=0,timersay3=0,timersay4=0,timersay5=0; // long cinsisnden
+int8 durum2;
+int8 durum3 ;
+float32 sicaklik_degeri;
+
+
+int8 ksayac;
+float32 verilensut; // 
+int kalan2,kalan3,kalan1;
+int16 kalant;
+float32 kalan; // eeprom 90
+int16 debipulse;
+int iptal=0;
+float32 litre;
+int8 cc1,cc2,cc3,cc4;
+ //debimetre cc degeri yarim litre icin > cc degeri cct=100xcc1+10xcc2+cc3
+int16 cct;
+int16 cch;
+//float32 cch1,cch2,cch3,cch4,cch5;// cch,cch1,cch2,cch3 degerleri  verilen litreye gore pulse sayilaridir.
+
+int16 yarim;
+int16  bir;
+int16 iki;
+int16 uc;
+int16 dort;
+int16 bes;
+
+int16 debit;
+
+float32 debimetrecc;  //=read_int16_eeprom(50); 
+int16  qr;
+int8 fg;
+int8 xc;
+int8 guvenlik=0;
+int8 durum4=0;
+int8 durum5=0;
+int8 kset2;
+int ff=0; // 7 derece uzerinki sayac sut verme yazisi için 
+#define buffer_size 30
+ 
+ // eprom 2 nolu adres karistirici ayari
+ // 3  ve 4 5 nolu adres tankin litresi hesabı 100x+10y+z
+ // 32 nolu eprom adresi kalan sut
+ //
+ 
+ 
+#int_rda // RX ucuna veri gelince meydane gelen kesme
+void serihaberlesme_kesmesi ()
+{
+
+gelen[j]=getc();
+if(gelen[j]>47&&gelen[j]<58)
+{
+data[j]=(int)gelen[j]-48;
+
+
+}
+else 
+{
+data[j]=0;
+}
+
+
+
+
+j=(j+1)% buffer_size;
+
+
+if(gelen[7]=='c')
+{
+iptal=1;
+}
+
+
+}
+
+#int_ext
+void b0kesmesi()
+{
+
+debipulse++;
+
+
+}
+
+
+
+
+#int_timer1
+void timer1_kesmesi()
+ {
+     
+     timersay++;
+     timersay3++;
+     debit++;
+     timersay4++;
+     timersay5++;
+     
+  if(timersay4==300)
+  {
+  durum4=1;
+  timersay4=0;
+  
+  }
+  if(timersay5==900)
+  {
+  durum5=1;
+  timersay5=0;
+  }
+     
+    
+     
+     
+     if ( timersay==100)  //8mhz gore 1 tick 0.25sn :::::::::::::: 20MHZ 0.1SN
+     
+     {
+     durum2=1;
+     timersay=0;
+  
+     
+ }
+ if(timersay3==600)
+ {
+ 
+ durum3=1;
+ timersay3=0;
+ }
+     
+     
+     
+     
+   
+   set_timer1(3036); 
+ }
+ 
+ 
+ 
+ 
+ void litredegergonder()
+ {
+
+
+litre=(float32)debipulse/debimetrecc;
+ qr++;
+ 
+ if( qr>300)
+ {
+ //printf("lt:%f:lt\r\n",litre);
+ qr=0;
+ 
+ 
+ 
+ }
+ 
+
+//printf("lt:verilen sut=%f:lt",litre);
+
+
+
+}
+ 
+ 
+ 
+
+
+
+
+
+
+
+
+
+void basla()
+{
+kalan=read_float_eeprom(90);
+
+printf("kln:%f:kln\r\n",kalan);
+
+delay_ms(190);
+
+
+printf("xk:TNC:xk \r\n");
+
+delay_ms(550);
+sicaklik_degeri=ds1820_read();
+delay_ms(350);
+printf("xk:sicaklik=%FC:xk \r\n",sicaklik_degeri);
+
+
+
+
+
+ ksayac=0;
+sicaklik_degeri=ds1820_read();
+delay_ms(350);
+printf("xk:sicaklik=%FC:xk \r\n",sicaklik_degeri);
+
+delay_ms(30);
+
+
+}
+
+
+
+
+
+void buffersifirla()
+{
+for(d=0;d<80;d++)
+{amk=0;
+gelen[d]=null;
+data[d]=null;
+
+}
+amk=1;
+j=0;
+
+
+}
+
+void iptalsonrasi()
+{
+printf("dy:iptal edildi:dy \r\n");
+for(d=0;d<80;d++)
+{amk=0;
+gelen[d]=null;
+data[d]=null;
+
+}
+amk=1;
+j=0;
+delay_ms(1500);
+printf("dy:tekrar secin:dy \r\n");
+
+buffersifirla();
+iptal=0;
+}
+
+
+ /********* ANA PROGRAM FONKSIYONU********/
+void main ( )
+{
+ setup_psp(PSP_DISABLED); // PSP birimi devre disi
+ 
+ setup_timer_2(T2_DISABLED,0,1); // T2 zamanlayicisi devre disi
+ setup_adc_ports(NO_ANALOGS); // ANALOG giris yok
+ setup_adc(ADC_OFF); // ADC birimi devre disi
+ setup_CCP1(CCP_OFF); // CCP1 birimi devre disi
+ setup_CCP2(CCP_OFF); // CCP2 birimi devre disi
+ 
+ setup_timer_1( T1_INTERNAL| T1_DIV_BY_8);
+  set_timer1(3036);//20Mhz'de 13.1ms de kesme verir
+
+enable_interrupts(int_rda);
+ext_int_edge(H_TO_L);
+
+enable_interrupts(INT_EXT);
+enable_interrupts(INT_TIMER1);
+enable_interrupts(global);
+
+
+
+set_tris_b(0xff);
+output_b(0x00);
+set_tris_a(0x00);
+output_a(0x00);
+set_tris_d(0xff);
+output_d(0x00);
+ 
+ 
+
+for(xc=0;xc<30;xc++)
+{
+ delay_ms(1000);
+}
+
+
+ 
+basla();
+delay_ms(100);
+cch=read_int16_eeprom(50);
+delay_ms(100);
+buffersifirla();   
+delay_ms(100);
+ksayac=0;
+
+while(1)
+{
+
+
+delay_ms(10);
+
+
+
+
+if(durum3==1)
+{
+
+
+// karistirici icin eskidekinde karıştırıcı a1 idi a0 sogutma iptal edildi a0 karistici oldu 
+
+kset2=(int8)read_eeprom(17);
+delay_ms(50);
+if(kset2!=null&&kset2!=0)
+{
+
+     if(ksayac==kset2)
+     {
+     ksayac=0;
+     output_toggle(pin_a0);
+     
+     }
+     ksayac++;
+     
+}
+
+
+
+durum3=0;
+
+
+}
+
+
+
+
+// durum4 >> güvenlik 1 olduktan sonra 10 saniye geçmesi durumundan kendini resetlicek
+if(durum4==1&&kbhit()==0)
+{
+durum4=0;
+timersay4=0;
+if(guvenlik==1)
+{
+guvenlik=0;
+output_low(pin_a1);
+printf("bt:reset:bt\r\n");
+durum4=0;
+}
+}
+
+//resetleme
+if(durum5==1&&kbhit()==0)
+{
+durum5=0;
+timersay5=0;
+
+
+}
+
+if(j>=9)
+{
+//printf("gelen10:%c",gelen[10]);
+
+printf("data:%c%c%c%c%c%c%c%c%c%c\r\n",gelen[0],gelen[1],gelen[2],gelen[3],gelen[4],gelen[5],gelen[6],gelen[7],gelen[8],gelen[9]);
+
+
+
+// bufferr
+if(gelen[5]=='d'&&gelen[6]=='y')
+{ 
+durum4=0;
+timersay4=0;
+timersay=0;
+iptal=0;
+cch=read_int16_eeprom(50);
+debimetrecc=(float32)cch*2;
+yarim=cch;
+bir=2*yarim;
+iki=2*bir;
+uc=3*bir;
+dort=4*bir;
+bes=5*bir;
+sicaklik_degeri=ds1820_read();
+if(sicaklik_degeri<-3)
+{
+sicaklik_degeri=-3;
+}
+else if(sicaklik_degeri>50)
+{
+sicaklik_degeri=5;
+}
+
+printf("xk:sicaklik=%FC:xk \r\n",sicaklik_degeri);
+//delay_ms(100);
+
+kalan=read_float_eeprom(90);
+if(kalan>8)
+{
+if(sicaklik_degeri<=8)
+{
+
+if(guvenlik==1)
+{
+
+printf("dy:veriliyor bekleyiniz:dy \r\n");
+delay_ms(2000);
+            // debi hesap baslangıc  kodu 
+
+if(gelen[2]=='q')
+{
+debipulse=0;
+delay_ms(10);
+verilensut=0.5;
+aa:
+
+debipulse=debipulse;
+if(iptal==1)
+{
+buffersifirla();
+output_low(pin_a2);
+output_low(pin_a1);
+iptal=0;
+iptalsonrasi();
+continue;
+}
+output_high(pin_a2);
+// a2 süt verme rolesi-------------- litre  ayari yarim bir iki uc dort bes
+if(debipulse<=yarim)
+{
+output_high(pin_a2);
+durum2=0;
+timersay=0;
+goto aa;
+}
+else 
+{
+output_low(pin_a2);
+}
+}
+
+//---------
+else if(gelen[2]=='w')
+{
+debipulse=0;
+delay_ms(10);
+verilensut=1;
+aq:
+//cch=read_int16_eeprom(50);
+debipulse=debipulse;
+if(iptal==1)
+{
+buffersifirla();
+output_low(pin_a2);
+output_low(pin_a1);
+iptal=0;
+iptalsonrasi();
+continue;
+}
+output_high(pin_a2);
+// a2 süt verme rolesi-------------- litre  ayari yarim bir iki uc dort bes
+if(debipulse<=bir)
+{
+durum2=0;
+timersay=0;
+output_high(pin_a2);
+goto aq;
+}
+else 
+{
+output_low(pin_a2);
+}
+}
+//---------
+else if(gelen[2]=='e')
+{
+debipulse=0;
+delay_ms(10);
+verilensut=2;
+aw:
+
+debipulse=debipulse;
+if(iptal==1)
+{
+buffersifirla();
+output_low(pin_a2);
+output_low(pin_a1);
+iptal=0;
+iptalsonrasi();
+continue;
+}
+output_high(pin_a2);
+// a2 süt verme rolesi-------------- litre  ayari yarim bir iki uc dort bes
+if(debipulse<=iki)
+{
+durum2=0;
+timersay=0;
+output_high(pin_a2);
+goto aw;
+}
+else 
+{
+output_low(pin_a2);
+}
+}
+
+//---------
+else if(gelen[2]=='r')
+{
+debipulse=0;
+delay_ms(10);
+verilensut=3;
+as:
+
+debipulse=debipulse;
+if(iptal==1)
+{
+buffersifirla();
+output_low(pin_a2);
+output_low(pin_a1);
+iptal=0;
+iptalsonrasi();
+continue;
+}
+output_high(pin_a2);
+// a2 süt verme rolesi-------------- litre  ayari yarim bir iki uc dort bes
+if(debipulse<=uc)
+{
+durum2=0;
+timersay=0;
+output_high(pin_a2);
+goto as;
+}
+else 
+{
+output_low(pin_a2);
+}
+}
+
+//---------
+else if(gelen[2]=='t')
+{
+debipulse=0;
+delay_ms(10);
+verilensut=4;
+ad:
+
+debipulse=debipulse;
+if(iptal==1)
+{
+buffersifirla();
+output_low(pin_a2);
+output_low(pin_a1);
+iptal=0;
+iptalsonrasi();
+continue;
+}
+output_high(pin_a2);
+// a2 süt verme rolesi-------------- litre  ayari yarim bir iki uc dort bes
+if(debipulse<=dort)
+{
+durum2=0;
+timersay=0;
+output_high(pin_a2);
+goto ad;
+}
+else 
+{
+output_low(pin_a2);
+}
+}
+
+//---------
+else if(gelen[2]=='u')
+{
+debipulse=0;
+delay_ms(10);
+verilensut=5;
+aag:
+
+debipulse=debipulse;
+if(iptal==1)
+{
+buffersifirla();
+output_low(pin_a2);
+output_low(pin_a1);
+iptal=0;
+iptalsonrasi();
+continue;
+}
+output_high(pin_a2);
+// a2 süt verme rolesi-------------- litre  ayari yarim bir iki uc dort bes
+if(debipulse<=bes)
+{
+
+durum2=0;
+timersay=0;
+output_high(pin_a2);
+goto aag;
+}
+else 
+{
+output_low(pin_a2);
+}
+}
+
+
+
+
+
+
+output_low(pin_a2);
+
+litre=(float32)debipulse;
+delay_ms(500);
+printf("debipulse=%lu\r\n",debipulse);
+delay_ms(500);
+printf("litree1=%f\r\n",litre);
+litre=litre/(float32)debimetrecc;
+delay_ms(500);
+printf("debimetrecc=%f\r\n",debimetrecc);
+delay_ms(500);
+
+printf("lt:%f:lt\r\n",litre);
+
+delay_ms(1000);
+output_low(pin_a1);
+
+
+printf("dy:tesekkurler,bekleyiniz:dy \r\n");
+for(fg=0;fg<20;fg++)
+{
+delay_ms(1000);
+}
+
+printf("dy:YIKANIYOR...:dy \r\n");
+
+output_high(pin_a3);
+delay_ms(2000);
+output_low(pin_a3);
+
+printf("dy:hosgeldiniz:dy \r\n");
+
+
+
+
+// verilen sutun fonksiyonu buraya cagrılcak
+
+kalan=read_float_eeprom(90);
+delay_ms(890);
+kalan=kalan-verilensut;
+
+delay_ms(890);
+
+printf("kln:kalan=%f:kln \r\n",kalan);
+delay_ms(890);
+write_float_eeprom(90,kalan);
+debipulse=0;
+delay_ms(900);
+
+printf("dy:SECIM YAPINIZ:dy \r\n");
+
+guvenlik=0;
+// günvelik==1 ifi
+}
+else
+{
+printf("yy:g.r. aktif degil:yy");
+guvenlik=0;
+}
+
+
+// 8 derece altı
+
+
+}
+else
+{
+
+printf("yy:verilmez sicaklik yuksek:yy \r\n");
+delay_ms(90);
+
+}
+
+
+// 5 lt uzeri
+}
+else
+{
+
+printf("yy:sut az verilemez:yy \r\n");
+
+delay_ms(90);
+
+}
+
+
+
+
+
+// sut verme ve yıkama  karar yapisi
+
+buffersifirla();
+delay_ms(110);
+}
+
+else if(gelen[6]=='e'&&gelen[5]=='a')
+{ 
+
+timersay=0;
+//sdonus();
+//33456ae660
+if(data[0]!=0&&data[0]!=1)
+{
+/*
+printf("page2.t16.txt=");
+putc(0x22);
+printf("a:%d",c);
+putc(0x22);
+putc(0xff);
+putc(0xff);
+putc(0xff);
+delay_ms(50);
+*/
+delay_ms(150);
+
+printf("ea:kk:%d:ea \r\n",data[0]);
+
+delay_ms(150);
+
+
+write_eeprom(17,data[0]);
+delay_ms(50);
+//c data[0] degeri karsitirici zamani
+}
+
+//33456ae660
+//litre kalan 7 8 9 data dizisi
+write_eeprom(6,data[7]);
+write_eeprom(3,data[8]);
+write_eeprom(4,data[9]);
+
+kalan1=read_eeprom(6);
+kalan2=read_eeprom(3);
+kalan3=read_eeprom(4);
+//kalant=kalan1*100+kalan2*10+kalan3;
+kalant=(unsigned long)kalan1*100;
+kalant=kalant+(unsigned long)kalan2*10;
+kalant=kalant+(unsigned long)kalan3;
+
+
+kalan=(float32)kalant;
+write_float_eeprom(90,kalan);
+//kalan=read_float_eeprom(5)
+// karistirici  tank litresi  data giris  karar yapisi
+
+//sdonus();
+//33456ae660
+delay_ms(10);
+write_eeprom(42,data[1]);
+write_eeprom(44,data[2]);
+write_eeprom(46,data[3]);
+write_eeprom(48,data[4]);
+delay_ms(10);
+cc1=read_eeprom(42);
+cc2=read_eeprom(44);
+cc3=read_eeprom(46);
+cc4=read_eeprom(48);
+cct=(unsigned long) cc1*1000;
+cct=cct+(unsigned long) cc2*100;
+cct=cct+(unsigned long)cc3*10;
+cct=cct+(unsigned long)cc4;
+write_int16_eeprom(50,cct);
+delay_ms(10);
+/*
+printf("page2.t3.txt=");
+putc(0x22);
+printf("cc:%lu",cct);
+putc(0x22);
+putc(0xff);
+putc(0xff);
+putc(0xff);
+*/
+delay_ms(150);
+
+printf("ea:cc:%lu:ea \r\n",cct);
+
+delay_ms(150);
+buffersifirla();
+}
+else if(gelen[5]=='x'&&gelen[6]=='k')
+{
+
+timersay=0;
+
+delay_ms(350);
+sicaklik_degeri=ds1820_read();
+if(sicaklik_degeri<-3)
+{
+sicaklik_degeri=-3;
+}
+else if(sicaklik_degeri>50)
+{
+sicaklik_degeri=5;
+}
+printf("xk:sicaklik=%FC:xk \r\n",sicaklik_degeri);
+
+buffersifirla();
+delay_ms(350);
+
+if(sicaklik_degeri>6)
+{
+
+printf("yy:sut verme:yy \r\n");
+
+delay_ms(10);
+}
+else if(sicaklik_degeri<=6)
+{
+printf("yy:sut ver:yy \r\n");
+delay_ms(10);
+}
+
+
+
+delay_ms(90);
+
+printf("kln:kalan=%f:kln\r\n",kalan);
+
+
+
+
+
+buffersifirla();
+delay_ms(90);
+}
+else if(gelen[5]=='t'&&gelen[6]=='c')
+{
+if(gelen[0]=='a'&&gelen[1]=='t')
+{
+durum4=0;
+timersay4=0;
+guvenlik=1;
+output_high(pin_a1);
+buffersifirla();
+j=0;
+}
+}
+
+
+
+
+else
+{
+printf("yy:h.komut:yy\r\n");
+delay_ms(1000);
+printf("yy:secim yapiniz:yy\r\n");
+
+for(d=0;d<80;d++)
+{
+gelen[d]=null;
+amk=0;
+}
+
+amk=1;
+j=0;
+
+}
+
+
+
+for(d=0;d<80;d++)
+{amk=0;
+gelen[d]=null;
+data[d]=null;
+}
+amk=1;
+j=0;
+
+
+
+buffersifirla();
+j=0;
+
+//j=9 karar yapısı sonu 
+}
+//seri haberlesme buffer  data karar yapisi sonu   10 bytlik veri geldikten sonra karar yapısı...++
+
+
+
+
+
+//while 
+}
+ 
+ 
+ 
+ delay_ms(10);
+ }
+
